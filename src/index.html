@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Winget List Maker</title>
+
+  <!-- ─────────────────────────────────────────────────────────────────────
+       CONFIGURATION — set your repo details here
+  ──────────────────────────────────────────────────────────────────────── -->
+  <script>
+    // Raw GitHub URL to data/packages.json in your repo
+    // Format: https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/data/packages.json
+    const DATA_URL = "https://raw.githubusercontent.com/var-gr/wingetlistmaker/main/data/packages.json";
+  </script>
+  <!-- ──────────────────────────────────────────────────────────────────── -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7/dist/fuse.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0a0908;
+      --surface:     #131110;
+      --surface-2:   #1b1814;
+      --border:      #242019;
+      --border-2:    #302b24;
+      --accent:      #d4933a;
+      --accent-glow: rgba(212, 147, 58, 0.12);
+      --accent-dim:  #1c1208;
+      --text:        #f5f1ea;
+      --text-2:      #c8b99e;
+      --muted:       #8a7b6a;
+      --danger:      #bf5b4a;
+      --font-d:      'Cormorant Garamond', Georgia, serif;
+      --font-m:      'IBM Plex Mono', 'Consolas', monospace;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background:
+        radial-gradient(ellipse 60% 40% at 12% 0%,   rgba(212,147,58,0.06) 0%, transparent 65%),
+        radial-gradient(ellipse 40% 55% at 88% 95%,  rgba(212,147,58,0.03) 0%, transparent 65%),
+        var(--bg);
+      color: var(--text);
+      font-family: var(--font-m);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+
+    /* grain overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='250' height='250'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='250' height='250' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 180px 180px;
+    }
+
+    /* amber top bar */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent) 0%, rgba(212,147,58,0.35) 55%, transparent 100%);
+      z-index: 200;
+    }
+
+    /* ── Animations ──────────────────────────────────────────────────── */
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes itemIn {
+      from { opacity: 0; transform: translateX(-5px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes selIn {
+      from { opacity: 0; transform: scale(0.96) translateX(6px); }
+      to   { opacity: 1; transform: scale(1) translateX(0); }
+    }
+    @keyframes dots {
+      0%   { content: ''; }
+      33%  { content: '.'; }
+      66%  { content: '..'; }
+      100% { content: '...'; }
+    }
+
+    /* ── Layout ──────────────────────────────────────────────────────── */
+    #app {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      grid-template-columns: 1fr 420px;
+      grid-template-areas:
+        "header   header"
+        "search   sidebar";
+      height: 100%;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────── */
+    #header {
+      grid-area: header;
+      height: 72px;
+      padding: 0 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      border-bottom: 1px solid var(--border);
+      animation: slideDown 0.4s cubic-bezier(.22,.68,0,1.1) both;
+    }
+
+    #wordmark {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+      flex-shrink: 0;
+      text-decoration: none;
+    }
+    .wm-title {
+      font-family: var(--font-d);
+      font-style: italic;
+      font-size: 30px;
+      font-weight: 400;
+      color: var(--text);
+      line-height: 1;
+      letter-spacing: -0.015em;
+    }
+    .wm-rule {
+      width: 1px;
+      height: 17px;
+      background: var(--border-2);
+      flex-shrink: 0;
+    }
+    .wm-sub {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    #h-divider {
+      width: 1px;
+      height: 26px;
+      background: var(--border-2);
+      flex-shrink: 0;
+    }
+
+    /* search box */
+    #search-wrap {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    #search-icon {
+      position: absolute;
+      left: 13px;
+      color: var(--muted);
+      pointer-events: none;
+      display: flex;
+    }
+    #search-kbd {
+      position: absolute;
+      right: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      border: 1px solid var(--border-2);
+      border-radius: 3px;
+      padding: 2px 7px;
+      pointer-events: none;
+      line-height: 1.4;
+    }
+    #search-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      color: var(--text);
+      font-family: var(--font-m);
+      font-size: 14px;
+      font-weight: 400;
+      padding: 10px 48px 10px 40px;
+      outline: none;
+      transition: border-color 0.18s, background 0.18s, box-shadow 0.18s;
+    }
+    #search-input:focus {
+      border-color: var(--accent);
+      background: var(--surface-2);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    #search-input:focus ~ #search-kbd { display: none; }
+    #search-input::placeholder { color: var(--muted); }
+    #search-input:disabled { opacity: 0.35; }
+
+    /* header right */
+    #header-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 2px;
+      flex-shrink: 0;
+      min-width: 80px;
+    }
+    #pkg-count {
+      font-family: var(--font-d);
+      font-size: 28px;
+      font-weight: 600;
+      color: var(--accent);
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    #status {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    #status.loading::after {
+      content: '';
+      animation: dots 1.2s steps(4, end) infinite;
+    }
+
+    /* ── Results panel ───────────────────────────────────────────────── */
+    #search-panel {
+      grid-area: search;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      animation: fadeUp 0.45s 0.08s cubic-bezier(.22,.68,0,1.1) both;
+    }
+
+    #results { list-style: none; }
+
+    #results li {
+      position: relative;
+      padding: 14px 32px 14px 64px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      animation: itemIn 0.22s calc(var(--i, 0) * 18ms) ease both;
+      transition: background 0.1s;
+    }
+    #results li::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 2px;
+      background: var(--accent);
+      transform: scaleY(0);
+      transition: transform 0.14s ease;
+    }
+    #results li:hover             { background: var(--surface); }
+    #results li:hover::before     { transform: scaleY(1); }
+    #results li.selected          { background: var(--accent-dim); }
+    #results li.selected::before  { transform: scaleY(1); }
+
+    .pkg-idx {
+      position: absolute;
+      left: 16px; top: 16px;
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+      width: 30px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      opacity: 0.6;
+    }
+    .pkg-name {
+      font-size: 15px;
+      font-weight: 400;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding-right: 32px;
+    }
+    .pkg-id {
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--accent);
+      opacity: 0.8;
+    }
+    .pkg-meta {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .pkg-check {
+      position: absolute;
+      right: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 13px;
+      color: var(--accent);
+      opacity: 0;
+      transition: opacity 0.14s;
+    }
+    #results li.selected .pkg-check { opacity: 1; }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────── */
+    #sidebar {
+      grid-area: sidebar;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: fadeUp 0.45s 0.16s cubic-bezier(.22,.68,0,1.1) both;
+    }
+
+    /* queue header */
+    #sel-header {
+      height: 58px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sel-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.13em;
+    }
+    #selected-count {
+      font-family: var(--font-d);
+      font-size: 26px;
+      font-weight: 600;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    /* queue list */
+    #selected-list {
+      flex: 1;
+      overflow-y: auto;
+      list-style: none;
+    }
+    #selected-list li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 18px 11px 24px;
+      border-bottom: 1px solid var(--border);
+      animation: selIn 0.18s ease both;
+      transition: background 0.1s;
+    }
+    #selected-list li:hover { background: var(--surface); }
+
+    .sel-num {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--muted);
+      flex-shrink: 0;
+      width: 22px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .sel-id {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text-2);
+    }
+    .remove-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-family: var(--font-m);
+      font-size: 16px;
+      line-height: 1;
+      padding: 3px 7px;
+      border-radius: 3px;
+      flex-shrink: 0;
+      transition: color 0.1s, background 0.1s;
+    }
+    .remove-btn:hover {
+      color: var(--danger);
+      background: rgba(191, 91, 74, 0.12);
+    }
+
+    /* export */
+    #export-area {
+      padding: 16px 24px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .export-btn {
+      width: 100%;
+      padding: 12px 16px;
+      background: transparent;
+      border: 1px solid var(--border-2);
+      color: var(--text-2);
+      font-family: var(--font-m);
+      font-size: 13px;
+      font-weight: 400;
+      cursor: pointer;
+      border-radius: 4px;
+      letter-spacing: 0.03em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: border-color 0.15s, color 0.15s, background 0.15s, box-shadow 0.15s;
+    }
+    .export-btn svg { flex-shrink: 0; }
+    .export-ext {
+      margin-left: auto;
+      font-size: 11px;
+      opacity: 0.45;
+      font-variant-numeric: tabular-nums;
+    }
+    .export-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-dim);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .export-btn:disabled { opacity: 0.28; cursor: not-allowed; }
+
+    /* ── Placeholder / empty ─────────────────────────────────────────── */
+    .placeholder {
+      padding: 56px 32px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 400;
+    }
+
+    /* ── Scrollbars ──────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <header id="header">
+    <div id="wordmark">
+      <span class="wm-title">winget</span>
+      <span class="wm-rule"></span>
+      <span class="wm-sub">list maker</span>
+    </div>
+
+    <div id="h-divider"></div>
+
+    <div id="search-wrap">
+      <span id="search-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+             stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="6.5" cy="6.5" r="4.5"/>
+          <line x1="10" y1="10" x2="14" y2="14"/>
+        </svg>
+      </span>
+      <input id="search-input" type="search"
+             placeholder="Search by name, id, or publisher…" disabled />
+      <span id="search-kbd">/</span>
+    </div>
+
+    <div id="header-right">
+      <span id="pkg-count">—</span>
+      <span id="status" class="loading">connecting</span>
+    </div>
+  </header>
+
+  <!-- ── Results ─────────────────────────────────────────────────────── -->
+  <div id="search-panel">
+    <ul id="results">
+      <li class="placeholder">fetching package index…</li>
+    </ul>
+  </div>
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+  <div id="sidebar">
+    <div id="sel-header">
+      <span class="sel-label">Queue</span>
+      <span id="selected-count">0</span>
+    </div>
+
+    <ul id="selected-list">
+      <li class="placeholder">select packages to queue them</li>
+    </ul>
+
+    <div id="export-area">
+      <button class="export-btn" id="btn-ps1" disabled>
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"
+             stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M8 2v9"/><path d="M4 7l4 4 4-4"/><path d="M2 13h12"/>
+        </svg>
+        PowerShell Script
+        <span class="export-ext">.ps1</span>
+      </button>
+      <button class="export-btn" id="btn-bat" disabled>
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"
+             stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M8 2v9"/><path d="M4 7l4 4 4-4"/><path d="M2 13h12"/>
+        </svg>
+        Batch File
+        <span class="export-ext">.bat</span>
+      </button>
+    </div>
+  </div>
+
+</div>
+<script>
+  // ── State ──────────────────────────────────────────────────────────────
+  let allPackages  = [];
+  let fuse         = null;
+  let selected     = new Map();
+
+  // ── DOM ────────────────────────────────────────────────────────────────
+  const searchInput   = document.getElementById("search-input");
+  const statusEl      = document.getElementById("status");
+  const pkgCountEl    = document.getElementById("pkg-count");
+  const resultsList   = document.getElementById("results");
+  const selectedList  = document.getElementById("selected-list");
+  const selectedCount = document.getElementById("selected-count");
+  const btnPs1        = document.getElementById("btn-ps1");
+  const btnBat        = document.getElementById("btn-bat");
+
+  // ── Keyboard shortcut: "/" focuses search ───────────────────────────
+  document.addEventListener("keydown", e => {
+    if (e.key === "/" && document.activeElement !== searchInput) {
+      e.preventDefault();
+      searchInput.focus();
+    }
+    if (e.key === "Escape") searchInput.blur();
+  });
+
+  // ── Fetch package list from static JSON in repo ───────────────────────
+  async function loadPackages() {
+    const res = await fetch(DATA_URL);
+    if (!res.ok) throw new Error(`Failed to fetch packages (${res.status})`);
+    return res.json();
+  }
+
+  // ── Init ───────────────────────────────────────────────────────────────
+  (async () => {
+    try {
+      statusEl.textContent = "loading…";
+      allPackages = await loadPackages();
+
+      fuse = new Fuse(allPackages, {
+        keys: ["name", "id", "publisher"],
+        threshold: 0.35,
+        distance: 200,
+        includeScore: false,
+        shouldSort: true,
+        minMatchCharLength: 2,
+      });
+
+      pkgCountEl.textContent  = allPackages.length.toLocaleString();
+      statusEl.className      = "";
+      statusEl.textContent    = "packages";
+      searchInput.disabled    = false;
+      searchInput.focus();
+
+      renderResults(allPackages.slice(0, 200));
+    } catch (err) {
+      pkgCountEl.textContent  = "—";
+      statusEl.className      = "";
+      statusEl.textContent    = "error";
+      resultsList.innerHTML   =
+        `<li class="placeholder" style="color:var(--danger)">${esc(err.message)}</li>`;
+      console.error(err);
+    }
+  })();
+
+  // ── Search ─────────────────────────────────────────────────────────────
+  let debounceTimer = null;
+  searchInput.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const q = searchInput.value.trim();
+      renderResults(
+        q ? fuse.search(q, { limit: 200 }).map(r => r.item)
+          : allPackages.slice(0, 200)
+      );
+    }, 120);
+  });
+
+  // ── Render results ─────────────────────────────────────────────────────
+  function renderResults(packages) {
+    if (!packages.length) {
+      resultsList.innerHTML = `<li class="placeholder">no results</li>`;
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    packages.forEach((pkg, i) => {
+      const li = document.createElement("li");
+      li.style.setProperty("--i", Math.min(i, 30));
+      if (selected.has(pkg.id)) li.classList.add("selected");
+
+      const meta = [pkg.publisher, pkg.version].filter(Boolean).join(" · ");
+      li.innerHTML = `
+        <span class="pkg-idx">${i + 1}</span>
+        <span class="pkg-name">${esc(pkg.name || pkg.id)}</span>
+        <span class="pkg-id">${esc(pkg.id)}</span>
+        ${meta ? `<span class="pkg-meta">${esc(meta)}</span>` : ""}
+        <span class="pkg-check">✓</span>
+      `;
+      li.addEventListener("click", () => togglePackage(pkg, li));
+      frag.appendChild(li);
+    });
+
+    resultsList.innerHTML = "";
+    resultsList.appendChild(frag);
+  }
+
+  // ── Toggle selection ───────────────────────────────────────────────────
+  function togglePackage(pkg, liEl) {
+    if (selected.has(pkg.id)) {
+      selected.delete(pkg.id);
+      liEl?.classList.remove("selected");
+    } else {
+      selected.set(pkg.id, pkg);
+      liEl?.classList.add("selected");
+    }
+    renderSelected();
+  }
+
+  function removePackage(id) {
+    selected.delete(id);
+    const li = [...resultsList.querySelectorAll("li")].find(
+      el => el.querySelector(".pkg-id")?.textContent === id
+    );
+    li?.classList.remove("selected");
+    renderSelected();
+  }
+
+  // ── Render selected queue ──────────────────────────────────────────────
+  function renderSelected() {
+    selectedCount.textContent = selected.size;
+    const hasAny = selected.size > 0;
+    btnPs1.disabled = !hasAny;
+    btnBat.disabled = !hasAny;
+
+    if (!hasAny) {
+      selectedList.innerHTML =
+        `<li class="placeholder">select packages to queue them</li>`;
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    let n = 1;
+    for (const [id] of selected) {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <span class="sel-num">${n++}</span>
+        <span class="sel-id" title="${esc(id)}">${esc(id)}</span>
+        <button class="remove-btn" title="Remove">×</button>
+      `;
+      li.querySelector(".remove-btn").addEventListener("click", () => removePackage(id));
+      frag.appendChild(li);
+    }
+
+    selectedList.innerHTML = "";
+    selectedList.appendChild(frag);
+  }
+
+  // ── Export builders ────────────────────────────────────────────────────
+  function buildPs1() {
+    return [
+      "# Generated by Winget List Maker",
+      "# Run in an elevated PowerShell window",
+      "",
+      ...[...selected.keys()].map(
+        id => `winget install --id ${id} --silent --accept-package-agreements --accept-source-agreements`
+      ),
+    ].join("\r\n");
+  }
+
+  function buildBat() {
+    return [
+      "@echo off",
+      "REM Generated by Winget List Maker",
+      "REM Run as Administrator",
+      "",
+      ...[...selected.keys()].map(
+        id => `winget install --id ${id} --silent --accept-package-agreements --accept-source-agreements`
+      ),
+    ].join("\r\n");
+  }
+
+  function download(filename, content) {
+    const a   = document.createElement("a");
+    a.href    = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+
+  btnPs1.addEventListener("click", () => download("winget-install.ps1", buildPs1()));
+  btnBat.addEventListener("click", () => download("winget-install.bat",  buildBat()));
+
+  // ── Utility ────────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+</script>
+</body>
+</html>
