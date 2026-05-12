@@ -53,6 +53,10 @@ def fetch_packages(db_path: str) -> list[dict]:
     has_publishers = "norm_publishers"      in tables
     has_pub_map    = "norm_publishers_map"  in tables
 
+    # Always drive from manifest so names, ids, versions are correctly linked.
+    # manifest.id  → ids.rowid
+    # manifest.name → names.rowid
+    # manifest.version → versions.rowid
     if "manifest" in tables and has_versions:
         if has_publishers and has_pub_map and pub_col and pub_map_col:
             query = f"""
@@ -61,28 +65,29 @@ def fetch_packages(db_path: str) -> list[dict]:
                     n.name                         AS name,
                     COALESCE(np.{pub_col}, '')     AS publisher,
                     MAX(v.version)                 AS version
-                FROM ids AS i
-                LEFT JOIN names               AS n   ON n.rowid      = i.rowid
-                LEFT JOIN manifest            AS m   ON m.id         = i.rowid
+                FROM manifest AS m
+                LEFT JOIN ids                 AS i   ON i.rowid      = m.id
+                LEFT JOIN names               AS n   ON n.rowid      = m.name
                 LEFT JOIN versions            AS v   ON v.rowid      = m.version
                 LEFT JOIN norm_publishers_map AS npm ON npm.manifest = m.rowid
                 LEFT JOIN norm_publishers     AS np  ON np.rowid     = npm.{pub_map_col}
+                WHERE i.id IS NOT NULL
                 GROUP BY i.id
             """
         else:
             query = """
                 SELECT i.id AS id, n.name AS name, '' AS publisher, MAX(v.version) AS version
-                FROM ids AS i
-                LEFT JOIN names    AS n ON n.rowid = i.rowid
-                LEFT JOIN manifest AS m ON m.id    = i.rowid
+                FROM manifest AS m
+                LEFT JOIN ids      AS i ON i.rowid = m.id
+                LEFT JOIN names    AS n ON n.rowid = m.name
                 LEFT JOIN versions AS v ON v.rowid = m.version
+                WHERE i.id IS NOT NULL
                 GROUP BY i.id
             """
     else:
         query = """
-            SELECT i.id AS id, n.name AS name, '' AS publisher, '' AS version
+            SELECT i.id AS id, i.id AS name, '' AS publisher, '' AS version
             FROM ids AS i
-            LEFT JOIN names AS n ON n.rowid = i.rowid
             GROUP BY i.id
         """
 
