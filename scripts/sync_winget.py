@@ -52,13 +52,14 @@ def fetch_packages(db_path: str) -> list[dict]:
                     i.id                           AS id,
                     n.name                         AS name,
                     COALESCE(np.{pub_col}, '')     AS publisher,
-                    COALESCE(v.version, '')        AS version
+                    MAX(v.version)                 AS version
                 FROM ids AS i
                 LEFT JOIN names               AS n   ON n.rowid       = i.rowid
                 LEFT JOIN manifest            AS m   ON m.id          = i.rowid
                 LEFT JOIN versions            AS v   ON v.rowid       = m.version
                 LEFT JOIN norm_publishers_map AS npm ON npm.manifest  = m.rowid
                 LEFT JOIN norm_publishers     AS np  ON np.rowid      = npm.{pub_map_col}
+                GROUP BY i.id
             """
         else:
             query = """
@@ -66,17 +67,19 @@ def fetch_packages(db_path: str) -> list[dict]:
                     i.id                       AS id,
                     n.name                     AS name,
                     ''                         AS publisher,
-                    COALESCE(v.version, '')    AS version
+                    MAX(v.version)             AS version
                 FROM ids AS i
                 LEFT JOIN names    AS n ON n.rowid = i.rowid
                 LEFT JOIN manifest AS m ON m.id    = i.rowid
                 LEFT JOIN versions AS v ON v.rowid = m.version
+                GROUP BY i.id
             """
     else:
         query = """
             SELECT i.id AS id, n.name AS name, '' AS publisher, '' AS version
             FROM ids AS i
             LEFT JOIN names AS n ON n.rowid = i.rowid
+            GROUP BY i.id
         """
 
     cur.execute(query)
