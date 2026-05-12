@@ -26,19 +26,37 @@ def fetch_packages(db_path: str) -> list[dict]:
     tables = {row[0] for row in cur.fetchall()}
     print(f"Tables found: {sorted(tables)}")
 
-    if "manifest" in tables and "versions" in tables:
-        query = """
-            SELECT
-                i.id                          AS id,
-                n.name                        AS name,
-                COALESCE(p.publisher, '')     AS publisher,
-                COALESCE(v.version, '')       AS version
-            FROM ids AS i
-            LEFT JOIN names      AS n ON n.rowid = i.rowid
-            LEFT JOIN manifest   AS m ON m.id    = i.rowid
-            LEFT JOIN versions   AS v ON v.rowid = m.version
-            LEFT JOIN publishers AS p ON p.rowid = m.publisher
-        """
+    has_versions    = "versions"           in tables
+    has_publishers  = "norm_publishers"    in tables
+    has_pub_map     = "norm_publishers_map" in tables
+
+    if "manifest" in tables and has_versions:
+        if has_publishers and has_pub_map:
+            query = """
+                SELECT
+                    i.id                           AS id,
+                    n.name                         AS name,
+                    COALESCE(np.publisher, '')     AS publisher,
+                    COALESCE(v.version, '')        AS version
+                FROM ids AS i
+                LEFT JOIN names              AS n   ON n.rowid  = i.rowid
+                LEFT JOIN manifest           AS m   ON m.id     = i.rowid
+                LEFT JOIN versions           AS v   ON v.rowid  = m.version
+                LEFT JOIN norm_publishers_map AS npm ON npm.manifest = m.rowid
+                LEFT JOIN norm_publishers    AS np  ON np.rowid = npm.norm_publishers
+            """
+        else:
+            query = """
+                SELECT
+                    i.id                       AS id,
+                    n.name                     AS name,
+                    ''                         AS publisher,
+                    COALESCE(v.version, '')    AS version
+                FROM ids AS i
+                LEFT JOIN names    AS n ON n.rowid = i.rowid
+                LEFT JOIN manifest AS m ON m.id    = i.rowid
+                LEFT JOIN versions AS v ON v.rowid = m.version
+            """
     else:
         query = """
             SELECT i.id AS id, n.name AS name, '' AS publisher, '' AS version
