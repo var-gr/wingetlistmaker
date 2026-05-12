@@ -323,11 +323,28 @@
       color: var(--accent);
       opacity: 0.8;
     }
+    .pkg-desc {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
     .pkg-meta {
       font-size: 11.5px;
       font-weight: 400;
       color: var(--muted);
     }
+    .pkg-link {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 11px;
+      margin-left: 4px;
+      vertical-align: middle;
+      transition: color 0.12s;
+    }
+    .pkg-link:hover { color: var(--accent); }
     .pkg-check {
       font-size: 13px;
       color: var(--accent);
@@ -645,9 +662,8 @@
     return AVATAR_PALETTE[strHash(id) % AVATAR_PALETTE.length];
   }
 
-  function pkgIconSlug(pkg) {
-    // Try the last segment of the winget ID: "Valve.Steam" → "steam"
-    return pkg.id.split(".").pop().toLowerCase().replace(/[^a-z0-9]/g, "");
+  function pkgIconUrl(pkg) {
+    return pkg.icon || null;
   }
 
   // ── Render results ─────────────────────────────────────────────────────
@@ -663,20 +679,26 @@
       li.style.setProperty("--i", Math.min(i, 30));
       if (selected.has(pkg.id)) li.classList.add("selected");
 
-      const meta  = [pkg.publisher, pkg.version].filter(Boolean).join(" · ");
-      const slug  = pkgIconSlug(pkg);
-      const color = avatarColor(pkg.id);
+      const meta   = [pkg.publisher, pkg.version].filter(Boolean).join(" · ");
+      const color  = avatarColor(pkg.id);
       const letter = (pkg.name || pkg.id)[0].toUpperCase();
+      const icon   = pkgIconUrl(pkg);
       li.innerHTML = `
         <span class="pkg-avatar" style="--av:${color}">
-          <img src="https://cdn.simpleicons.org/${slug}/f0ebe2"
-               loading="lazy"
-               onerror="this.classList.add('failed')" />
+          ${icon
+            ? `<img src="${esc(icon)}" loading="lazy" onerror="this.classList.add('failed')" />`
+            : ""}
           <span class="pkg-avatar-letter" style="color:${color}">${letter}</span>
         </span>
         <span class="pkg-text">
-          <span class="pkg-name">${esc(pkg.name || pkg.id)}</span>
+          <span class="pkg-name">
+            ${esc(pkg.name || pkg.id)}${pkg.url
+              ? ` <a class="pkg-link" href="${esc(pkg.url)}" target="_blank" rel="noopener"
+                     title="Visit website" onclick="event.stopPropagation()">↗</a>`
+              : ""}
+          </span>
           <span class="pkg-id">${esc(pkg.id)}</span>
+          ${pkg.description ? `<span class="pkg-desc">${esc(pkg.description)}</span>` : ""}
           ${meta ? `<span class="pkg-meta">${esc(meta)}</span>` : ""}
         </span>
         <span class="pkg-check">✓</span>
